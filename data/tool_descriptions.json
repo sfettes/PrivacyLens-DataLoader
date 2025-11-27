@@ -1,0 +1,315 @@
+{
+  "GoogleCalendarReadEvents": {
+    "toolkit": "GoogleCalendar",
+    "arguments": {
+      "event_ids": "array (An array of unique event identifiers to read events.)"
+    },
+    "returns": {
+      "event_details": "array (An array of objects containing details: event_id, name, content, time, location, attendees.)"
+    }
+  },
+  "GoogleCalendarSearchEvents": {
+    "toolkit": "GoogleCalendar",
+    "arguments": {
+      "keywords": "array (Keywords to search for.)",
+      "start_date": "string (Start date in ISO 8601 format.)",
+      "end_date": "string (End date in ISO 8601 format.)",
+      "attendees": "array (Emails of attendees to search for.)"
+    },
+    "returns": {
+      "events": "array (Array of searched event ids.)"
+    }
+  },
+  "GoogleCalendarSendInvitations": {
+    "toolkit": "GoogleCalendar",
+    "arguments": {
+      "event_id": "string (Unique identifier of the event.)"
+    },
+    "returns": {
+      "success": "boolean (Indicates if invitations were successfully sent.)"
+    }
+  },
+  "GmailSendEmail": {
+    "toolkit": "Gmail",
+    "arguments": {
+      "to": "string (Emails to send to, separated by commas.)",
+      "subject": "string (Subject of the email.)",
+      "body": "string (Body of the email.)",
+      "cc": "string (CC emails, separated by commas.)",
+      "bcc": "string (BCC emails, separated by commas.)",
+      "send_at": "string (Scheduled time 'YYYY-MM-DD HH:mm'.)",
+      "attachments": "array (Local file paths of attachments.)"
+    },
+    "returns": {
+      "success": "boolean (Whether the email was sent successfully.)"
+    }
+  },
+  "GmailSearchEmails": {
+    "toolkit": "Gmail",
+    "arguments": {
+      "keywords": "array (Keywords to search.)",
+      "folders": "array (Folders to search: 'inbox', 'sent', 'drafts', 'spam'.)",
+      "limit": "integer (Max emails to retrieve. Default 5.)",
+      "date_range": "object ({'start_date', 'end_date'} in 'YYYY-MM-DD'.)",
+      "from": "string (Sender email.)",
+      "to": "string (Recipient email.)",
+      "labels": "array (Labels to filter by.)"
+    },
+    "returns": {
+      "emails": "array (List of emails with id, subject, from, to, timestamp.)"
+    }
+  },
+  "GmailReadEmail": {
+    "toolkit": "Gmail",
+    "arguments": {
+      "email_id": "string (Unique identifier of the email.)"
+    },
+    "returns": {
+      "from": "string",
+      "to": "string",
+      "subject": "string",
+      "body": "string",
+      "timestamp": "string",
+      "attachments": "array"
+    }
+  },
+  "GmailSearchContacts": {
+    "toolkit": "Gmail",
+    "arguments": {
+      "name": "string (Name to search.)",
+      "email": "string (Email to search.)",
+      "remark": "string (Remark to search.)",
+      "limit": "integer (Max results. Default 5.)"
+    },
+    "returns": {
+      "contacts": "array (List of contact objects with id, name, email, remark, info.)"
+    }
+  },
+  "SlackSendMessage": {
+    "toolkit": "Slack",
+    "arguments": {
+      "recipient": "string (Recipient name. Channel starts with '#', user with '@'.)",
+      "message": "string (Content of the message.)",
+      "file_path": "string (Optional local file path to upload.)"
+    },
+    "returns": {
+      "success": "boolean"
+    }
+  },
+  "SlackSearchMessage": {
+    "toolkit": "Slack",
+    "arguments": {
+      "query": "string (Search query.)",
+      "in": "string (Channel/User to search within.)",
+      "from": "string (Sender user name to search.)",
+      "max_results": "integer (Default 10.)"
+    },
+    "returns": {
+      "messages": "array (List of messages with content, timestamp, source.)"
+    }
+  },
+  "SlackSearchChannelOrUser": {
+    "toolkit": "Slack",
+    "arguments": {
+      "query": "string (Search query.)",
+      "search_type": "string (One of ['channels', 'users'].)",
+      "max_results": "integer (Default 10.)"
+    },
+    "returns": {
+      "results": "array (List of channel/user names and status.)"
+    }
+  },
+  "SlackGetUserDetails": {
+    "toolkit": "Slack",
+    "arguments": {
+      "user_name": "string (User name starting with '@'.)"
+    },
+    "returns": {
+      "profile": "object (First/Last name, email, phone, title.)",
+      "status": "object (Status text, emoji, presence.)"
+    }
+  },
+  "FacebookManagerGetUserProfile": {
+    "toolkit": "FacebookManager",
+    "arguments": {},
+    "returns": {
+      "profile": "object (User info: id, name, email, birthday, location.)"
+    }
+  },
+  "FacebookManagerUpdateUserProfile": {
+    "toolkit": "FacebookManager",
+    "arguments": {
+      "updates": "object (Fields to update: name, email, birthday, location.)"
+    },
+    "returns": {
+      "success": "boolean"
+    }
+  },
+  "FacebookManagerSearchFriends": {
+    "toolkit": "FacebookManager",
+    "arguments": {
+      "keyword": "string (Keyword to search.)",
+      "max_results": "integer (Default 10.)"
+    },
+    "returns": {
+      "friends_info": "array (List of friend profiles.)"
+    }
+  },
+  "FacebookManagerCreatePost": {
+    "toolkit": "FacebookManager",
+    "arguments": {
+      "content": "string (Post content.)",
+      "media_path": "string (Local media file path.)",
+      "privacy_setting": "string (One of ['public', 'friends', 'only me'].)"
+    },
+    "returns": {
+      "post_id": "string"
+    }
+  },
+  "FacebookManagerSearchPosts": {
+    "toolkit": "FacebookManager",
+    "arguments": {
+      "user_id": "string (User ID to search posts for.)",
+      "keyword": "string (Keyword to search.)",
+      "max_results": "integer"
+    },
+    "returns": {
+      "posts": "array (List of posts with id and content.)"
+    }
+  },
+  "NotionManagerCreatePage": {
+    "toolkit": "NotionManager",
+    "arguments": {
+      "page_title": "string (Title of new page.)",
+      "page_content": "string (Content of new page.)",
+      "parent_page_id": "string (Optional parent page ID.)"
+    },
+    "returns": {
+      "page_id": "string"
+    }
+  },
+  "NotionManagerReadPage": {
+    "toolkit": "NotionManager",
+    "arguments": {
+      "page_id": "string (Page ID.)"
+    },
+    "returns": {
+      "page_content": "string"
+    }
+  },
+  "NotionManagerEditPage": {
+    "toolkit": "NotionManager",
+    "arguments": {
+      "page_id": "string (Page ID.)",
+      "new_content": "string (New content.)"
+    },
+    "returns": {
+      "success": "boolean"
+    }
+  },
+  "NotionManagerSharePage": {
+    "toolkit": "NotionManager",
+    "arguments": {
+      "page_id": "string (Page ID.)",
+      "recipients": "array (List of email addresses.)"
+    },
+    "returns": {
+      "success": "boolean"
+    }
+  },
+  "NotionManagerSearchContent": {
+    "toolkit": "NotionManager",
+    "arguments": {
+      "keywords": "string"
+    },
+    "returns": {
+      "results": "array (Objects with id, title, content.)"
+    }
+  },
+  "MessengerSendMessage": {
+    "toolkit": "Messenger",
+    "arguments": {
+      "recipient_id": "string (Recipient or group ID.)",
+      "message": "string (Content.)"
+    },
+    "returns": {
+      "message_id": "string"
+    }
+  },
+  "MessengerReceiveMessage": {
+    "toolkit": "Messenger",
+    "arguments": {
+      "max_count": "integer (Default 10.)"
+    },
+    "returns": {
+      "messages": "array (List of message objects.)"
+    }
+  },
+  "MessengerSendMediaFile": {
+    "toolkit": "Messenger",
+    "arguments": {
+      "recipient_id": "string",
+      "file_path": "string"
+    },
+    "returns": {
+      "file_id": "string"
+    }
+  },
+  "MessengerShareFile": {
+    "toolkit": "Messenger",
+    "arguments": {
+      "recipient_id": "string",
+      "file_path": "string"
+    },
+    "returns": {
+      "file_id": "string"
+    }
+  },
+  "MessengerSearchInChat": {
+    "toolkit": "Messenger",
+    "arguments": {
+      "term": "string",
+      "chat_id": "string"
+    },
+    "returns": {
+      "results": "array"
+    }
+  },
+  "ZoomManagerGetMeetingTranscript": {
+    "toolkit": "ZoomManager",
+    "arguments": {
+      "meeting_id": "string"
+    },
+    "returns": {
+      "transcript": "string"
+    }
+  },
+  "ZoomManagerSearchTranscript": {
+    "toolkit": "ZoomManager",
+    "arguments": {
+      "meeting_id": "string",
+      "keyword": "string"
+    },
+    "returns": {
+      "search_results": "array"
+    }
+  },
+  "ZoomManagerGetParticipants": {
+    "toolkit": "ZoomManager",
+    "arguments": {
+      "meeting_id": "string"
+    },
+    "returns": {
+      "participants": "array"
+    }
+  },
+  "ZoomManagerSearchMeetings": {
+    "toolkit": "ZoomManager",
+    "arguments": {
+      "criteria": "object (Search by date, time, participants, or keywords.)"
+    },
+    "returns": {
+      "search_results": "array (List of meeting IDs.)"
+    }
+  }
+}
