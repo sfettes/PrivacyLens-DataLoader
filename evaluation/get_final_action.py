@@ -2,10 +2,11 @@ import argparse
 import json
 import os
 from vllm import LLM, SamplingParams
+from transformers import AutoTokenizer
 from typing import List, Dict
 
 # =============================================================================
-# 1. PROMPT TEMPLATE (Content Only)
+# 1. PROMPT TEMPLATE (Content Only - No Special Tokens Here)
 # =============================================================================
 
 PRIVACY_LENS_TEMPLATE = """You are a helpful AI Agent who can utilize a lot of external tools to answer User's questions or help User accomplish tasks following their instructions.
@@ -76,7 +77,6 @@ def get_tools_by_toolkit(requested_toolkits: List[str], tool_defs: Dict):
     for tool_name, def_data in tool_defs.items():
         if def_data.get("toolkit") in requested_toolkits:
             found_tools.append((tool_name, def_data))
-    
     found_tools.sort(key=lambda x: x[0])
     
     if not found_tools:
@@ -89,7 +89,6 @@ def get_tools_by_toolkit(requested_toolkits: List[str], tool_defs: Dict):
         args_json = json.dumps(definition.get("arguments", {}))
         returns_json = json.dumps(definition.get("returns", {}))
         toolkit_name = definition.get("toolkit", "General")
-        
         tool_str = (
             f"Toolkit: {toolkit_name}\n"
             f"Tool: {tool_name}\n"
@@ -100,19 +99,8 @@ def get_tools_by_toolkit(requested_toolkits: List[str], tool_defs: Dict):
             
     return "\n\n".join(descs), ", ".join(tool_names)
 
-def apply_llama3_chat_template(raw_content: str) -> str:
-    """
-    Wraps the raw prompt content in Llama-3 specific special tokens.
-    This creates a single turn conversation: User says [raw_content], Assistant starts saying [Thought:]
-    """
-    return (
-        f"<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n"
-        f"{raw_content}"
-        f"<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
-        f"Thought:"
-    )
-
-def format_prompt(row: Dict, tool_defs: Dict) -> str:
+def format_prompt(row: Dict, tool_defs: Dict, tokenizer) -> str:
+    """Formats the prompt using the model's official tokenizer template."""
     traj = row.get('trajectory', row) 
     
     user_name = traj.get('user_name', 'User')
@@ -123,8 +111,8 @@ def format_prompt(row: Dict, tool_defs: Dict) -> str:
     
     available_toolkit_description, tool_names_list = get_tools_by_toolkit(toolkits, tool_defs)
 
-    # 1. Build the raw content string
-    raw_prompt_content = PRIVACY_LENS_TEMPLATE.format(
+    # 1. Fill the Content
+    content = PRIVACY_LENS_TEMPLATE.format(
         user_name=user_name,
         user_email=user_email,
         input=user_instruction,
@@ -133,9 +121,20 @@ def format_prompt(row: Dict, tool_defs: Dict) -> str:
         agent_scratchpad=executable_trajectory
     )
     
-    # 2. Apply Llama-3 Chat Template logic
-    # We wrap the content in the user role and pre-fill the assistant response with "Thought:"
-    final_prompt = apply_llama3_chat_template(raw_prompt_content)
+    # 2. Apply Chat Template using Tokenizer
+    # This guarantees the model sees the correct Control Tokens (<|start_header_id|>, etc.)
+    messages = [{"role": "user", "content": content}]
+    
+    formatted_prompt = tokenizer.apply_chat_template(
+        messages, 
+        tokenize=False, 
+        add_generation_prompt=True
+    )
+    
+    # 3. Append the "Thought:" trigger
+    # Llama-3's template ends with "...<|start_header_id|>assistant<|end_header_id|>\n\n"
+    # We append "Thought:" so the model completes it.
+    final_prompt = formatted_prompt + "Thought:"
     
     return final_prompt
 
@@ -165,21 +164,27 @@ def main():
     
     args = parser.parse_args()
 
+    # 1. Load Tokenizer (CRITICAL STEP FOR FORMATTING)
+    print(f"Loading tokenizer from {args.model_path}...")
+    tokenizer = AutoTokenizer.from_pretrained(args.model_path)
+    
     tool_defs = load_tool_definitions(args.tools_file)
     data = load_data(args.input_file)
     
-    print("Formatting prompts with Llama-3 template...")
+    print("Formatting prompts...")
     prompts = []
     valid_indices = []
     
     for i, row in enumerate(data):
         try:
-            p = format_prompt(row, tool_defs)
+            # Pass tokenizer to the formatter
+            p = format_prompt(row, tool_defs, tokenizer)
             prompts.append(p)
             valid_indices.append(i)
         except Exception as e:
             print(f"Error formatting row {i}: {e}")
 
+    # 2. Initialize vLLM
     print(f"Initializing model: {args.model_path}")
     llm = LLM(
         model=args.model_path, 
@@ -188,6 +193,7 @@ def main():
         enforce_eager=True 
     )
     
+    # 3. Generate
     sampling_params = SamplingParams(
         temperature=0.0, 
         max_tokens=1024,
@@ -205,8 +211,6 @@ def main():
             original_row = data[idx]
             generated_text = output.outputs[0].text.strip()
             
-            # Since we pre-filled "Thought:", we prepend it back to the response
-            # for the final log so it looks complete.
             full_response = "Thought: " + generated_text
             
             result_obj = {
