@@ -5,7 +5,7 @@ from vllm import LLM, SamplingParams
 from typing import List, Dict
 
 # =============================================================================
-# 1. PROMPT TEMPLATE
+# 1. PROMPT TEMPLATE (Content Only)
 # =============================================================================
 
 PRIVACY_LENS_TEMPLATE = """You are a helpful AI Agent who can utilize a lot of external tools to answer User's questions or help User accomplish tasks following their instructions.
@@ -65,7 +65,6 @@ User Input: {input}
 # =============================================================================
 
 def load_tool_definitions(file_path: str) -> Dict:
-    """Loads the tools.json file."""
     if not os.path.exists(file_path):
         print(f"Warning: Tool definition file '{file_path}' not found.")
         return {}
@@ -73,30 +72,20 @@ def load_tool_definitions(file_path: str) -> Dict:
         return json.load(f)
 
 def get_tools_by_toolkit(requested_toolkits: List[str], tool_defs: Dict):
-    """
-    Finds all tools belonging to the requested toolkits (e.g. 'Gmail' -> 'GmailSendEmail').
-    Returns formatted descriptions and a comma-separated list of tool names.
-    """
     found_tools = []
-    
-    # Iterate through all defined tools to find matches
     for tool_name, def_data in tool_defs.items():
         if def_data.get("toolkit") in requested_toolkits:
             found_tools.append((tool_name, def_data))
-            
-    # Sort for deterministic output
+    
     found_tools.sort(key=lambda x: x[0])
     
     if not found_tools:
-        # Fallback if no matching tools are found
         return "No tools available matching the requested toolkits.", ""
 
     descs = []
     tool_names = []
-    
     for tool_name, definition in found_tools:
         tool_names.append(tool_name)
-        
         args_json = json.dumps(definition.get("arguments", {}))
         returns_json = json.dumps(definition.get("returns", {}))
         toolkit_name = definition.get("toolkit", "General")
@@ -111,8 +100,19 @@ def get_tools_by_toolkit(requested_toolkits: List[str], tool_defs: Dict):
             
     return "\n\n".join(descs), ", ".join(tool_names)
 
+def apply_llama3_chat_template(raw_content: str) -> str:
+    """
+    Wraps the raw prompt content in Llama-3 specific special tokens.
+    This creates a single turn conversation: User says [raw_content], Assistant starts saying [Thought:]
+    """
+    return (
+        f"<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n"
+        f"{raw_content}"
+        f"<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+        f"Thought:"
+    )
+
 def format_prompt(row: Dict, tool_defs: Dict) -> str:
-    """Constructs the prompt, dynamically appending 'Thought:' at the end."""
     traj = row.get('trajectory', row) 
     
     user_name = traj.get('user_name', 'User')
@@ -121,10 +121,10 @@ def format_prompt(row: Dict, tool_defs: Dict) -> str:
     toolkits = traj.get('toolkits', [])
     executable_trajectory = traj.get('executable_trajectory', '')
     
-    # Get descriptions and tool list
     available_toolkit_description, tool_names_list = get_tools_by_toolkit(toolkits, tool_defs)
 
-    prompt = PRIVACY_LENS_TEMPLATE.format(
+    # 1. Build the raw content string
+    raw_prompt_content = PRIVACY_LENS_TEMPLATE.format(
         user_name=user_name,
         user_email=user_email,
         input=user_instruction,
@@ -133,16 +133,13 @@ def format_prompt(row: Dict, tool_defs: Dict) -> str:
         agent_scratchpad=executable_trajectory
     )
     
-    # CRITICAL FIX: Ensure the prompt ends with "Thought:" to force the model to start generating.
-    # If the scratchpad was empty or didn't end with a newline, add one.
-    if not prompt.endswith("\n"):
-        prompt += "\n"
-    prompt += "Thought:"
+    # 2. Apply Llama-3 Chat Template logic
+    # We wrap the content in the user role and pre-fill the assistant response with "Thought:"
+    final_prompt = apply_llama3_chat_template(raw_prompt_content)
     
-    return prompt
+    return final_prompt
 
 def load_data(file_path: str) -> List[Dict]:
-    """Robust data loader for JSON or JSONL."""
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"Input file not found: {file_path}")
     if file_path.endswith('.jsonl'):
@@ -158,25 +155,20 @@ def load_data(file_path: str) -> List[Dict]:
 # =============================================================================
 
 def main():
-    parser = argparse.ArgumentParser(description="PrivacyLens Evaluation Script")
-    parser.add_argument("--model_path", type=str, required=True, help="Path to model or HF Hub ID")
-    parser.add_argument("--input_file", type=str, required=True, help="Input data file (.json/.jsonl)")
-    parser.add_argument("--output_file", type=str, required=True, help="Output file path (.jsonl)")
-    parser.add_argument("--tools_file", type=str, default="tools.json", help="Path to tools definition JSON")
-    parser.add_argument("--tp_size", type=int, default=1, help="Tensor Parallel size (GPUs)")
-    parser.add_argument("--max_model_len", type=int, default=8192, help="Context limit to prevent OOM")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model_path", type=str, required=True)
+    parser.add_argument("--input_file", type=str, required=True)
+    parser.add_argument("--output_file", type=str, required=True)
+    parser.add_argument("--tools_file", type=str, default="tools.json")
+    parser.add_argument("--tp_size", type=int, default=1)
+    parser.add_argument("--max_model_len", type=int, default=8192)
     
     args = parser.parse_args()
 
-    # 1. Load Resources
-    print(f"Loading tools from {args.tools_file}...")
     tool_defs = load_tool_definitions(args.tools_file)
-    
-    print(f"Loading data from {args.input_file}...")
     data = load_data(args.input_file)
     
-    # 2. Format Prompts
-    print("Formatting prompts...")
+    print("Formatting prompts with Llama-3 template...")
     prompts = []
     valid_indices = []
     
@@ -188,48 +180,39 @@ def main():
         except Exception as e:
             print(f"Error formatting row {i}: {e}")
 
-    if not prompts:
-        print("No valid prompts generated. Exiting.")
-        return
-
-    # 3. Initialize vLLM
     print(f"Initializing model: {args.model_path}")
     llm = LLM(
         model=args.model_path, 
         tensor_parallel_size=args.tp_size,
-        max_model_len=args.max_model_len, # Fixes H100 OOM
-        enforce_eager=True                # Fixes CUDA graph compatibility
+        max_model_len=args.max_model_len,
+        enforce_eager=True 
     )
     
-    # 4. Set Sampling Parameters
     sampling_params = SamplingParams(
         temperature=0.0, 
         max_tokens=1024,
-        stop=["Observation:", "User Input:"], # Stop before hallucinating environment feedback
-        repetition_penalty=1.05  # Fixes "the case the case" loops
+        stop=["Observation:", "User Input:"],
+        repetition_penalty=1.05
     )
 
-    # 5. Generate
-    print(f"Generating responses for {len(prompts)} inputs...")
+    print("Generating responses...")
     outputs = llm.generate(prompts, sampling_params)
 
-    # 6. Save as JSONL
-    print(f"Saving results to {args.output_file}...")
+    print(f"Saving to {args.output_file}...")
     with open(args.output_file, 'w') as f:
         for i, output in enumerate(outputs):
             idx = valid_indices[i]
             original_row = data[idx]
             generated_text = output.outputs[0].text.strip()
             
-            # Combine Thought + Response for clarity
-            # Since we forced the prompt to end with "Thought:", the generated text starts with the thought content.
+            # Since we pre-filled "Thought:", we prepend it back to the response
+            # for the final log so it looks complete.
             full_response = "Thought: " + generated_text
             
             result_obj = {
                 "id": original_row.get('name', f"sample_{idx}"),
                 "model_response": full_response, 
                 "full_prompt": prompts[i],
-                # Pass through relevant ground truth for the evaluator script
                 "ground_truth_sensitive_info": original_row.get('trajectory', {}).get('sensitive_info_items', [])
             }
             
