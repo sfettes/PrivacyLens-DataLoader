@@ -217,7 +217,7 @@ def main():
         temperature=0.0, 
         max_tokens=1024,
         stop=["Observation:", "User Input:"],
-        repetition_penalty=1.05
+        repetition_penalty=1.1
     )
 
     print("Generating responses...")
