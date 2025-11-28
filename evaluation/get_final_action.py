@@ -182,7 +182,7 @@ def main():
 
     # 3. Initialize vLLM
     print(f"Initializing model: {args.model_path}")
-    llm = LLM(model=args.model_path, tensor_parallel_size=args.tp_size)
+    llm = LLM(model=args.model_path, tensor_parallel_size=args.tp_size, max_model_len=8192)
     sampling_params = SamplingParams(
         temperature=0.0, 
         max_tokens=args.max_tokens,
