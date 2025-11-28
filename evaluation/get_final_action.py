@@ -193,7 +193,7 @@ def main():
         tensor_parallel_size=args.tp_size,
         max_model_len=args.max_model_len,
         enforce_eager=True,           # Disables CUDA Graphs (prevents some memory/optimization bugs)
-        num_speculative_tokens=0,     # <--- FORCE SPECULATIVE DECODING OFF
+        speculative_config=None,     # <--- FORCE SPECULATIVE DECODING OFF
     )
     
     # 3. Generate
