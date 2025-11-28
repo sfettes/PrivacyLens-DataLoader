@@ -172,7 +172,7 @@ def main():
         tensor_parallel_size=args.tp_size,
         max_model_len=args.max_model_len,
         enforce_eager=True,
-        num_speculative_tokens=0 
+        speculative_config=None
     )
     
     # 3. Generate
