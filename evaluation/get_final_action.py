@@ -6,7 +6,7 @@ from transformers import AutoTokenizer
 from typing import List, Dict
 
 # =============================================================================
-# 1. PROMPT TEMPLATE (Content Only - No Special Tokens Here)
+# 1. PROMPT TEMPLATE
 # =============================================================================
 
 PRIVACY_LENS_TEMPLATE = """You are a helpful AI Agent who can utilize a lot of external tools to answer User's questions or help User accomplish tasks following their instructions.
@@ -99,8 +99,11 @@ def get_tools_by_toolkit(requested_toolkits: List[str], tool_defs: Dict):
             
     return "\n\n".join(descs), ", ".join(tool_names)
 
-def format_prompt(row: Dict, tool_defs: Dict, tokenizer) -> str:
-    """Formats the prompt using the model's official tokenizer template."""
+def generate_prompt_ids(row: Dict, tool_defs: Dict, tokenizer) -> List[int]:
+    """
+    Generates the list of Token IDs for the prompt.
+    Includes the 'Thought:' pre-fill correctly.
+    """
     traj = row.get('trajectory', row) 
     
     user_name = traj.get('user_name', 'User')
@@ -111,7 +114,7 @@ def format_prompt(row: Dict, tool_defs: Dict, tokenizer) -> str:
     
     available_toolkit_description, tool_names_list = get_tools_by_toolkit(toolkits, tool_defs)
 
-    # 1. Fill the Content
+    # 1. Fill Content
     content = PRIVACY_LENS_TEMPLATE.format(
         user_name=user_name,
         user_email=user_email,
@@ -121,22 +124,22 @@ def format_prompt(row: Dict, tool_defs: Dict, tokenizer) -> str:
         agent_scratchpad=executable_trajectory
     )
     
-    # 2. Apply Chat Template using Tokenizer
-    # This guarantees the model sees the correct Control Tokens (<|start_header_id|>, etc.)
+    # 2. Apply Chat Template to get IDs (Not String)
     messages = [{"role": "user", "content": content}]
     
-    formatted_prompt = tokenizer.apply_chat_template(
+    # This returns the full list of integers including <|start_header_id|> etc.
+    chat_ids = tokenizer.apply_chat_template(
         messages, 
-        tokenize=False, 
+        tokenize=True, 
         add_generation_prompt=True
     )
     
-    # 3. Append the "Thought:" trigger
-    # Llama-3's template ends with "...<|start_header_id|>assistant<|end_header_id|>\n\n"
-    # We append "Thought:" so the model completes it.
-    final_prompt = formatted_prompt + "Thought:"
+    # 3. Encode the "Thought:" pre-fill
+    # We use add_special_tokens=False so it doesn't add another <|begin_of_text|>
+    thought_ids = tokenizer.encode("Thought:", add_special_tokens=False)
     
-    return final_prompt
+    # 4. Concatenate
+    return chat_ids + thought_ids
 
 def load_data(file_path: str) -> List[Dict]:
     if not os.path.exists(file_path):
@@ -164,33 +167,33 @@ def main():
     
     args = parser.parse_args()
 
-    # 1. Load Tokenizer (CRITICAL STEP FOR FORMATTING)
+    # 1. Load Tokenizer
     print(f"Loading tokenizer from {args.model_path}...")
     tokenizer = AutoTokenizer.from_pretrained(args.model_path)
     
     tool_defs = load_tool_definitions(args.tools_file)
     data = load_data(args.input_file)
     
-    print("Formatting prompts...")
-    prompts = []
+    print("Tokenizing prompts...")
+    prompt_token_ids_list = []
     valid_indices = []
     
     for i, row in enumerate(data):
         try:
-            # Pass tokenizer to the formatter
-            p = format_prompt(row, tool_defs, tokenizer)
-            prompts.append(p)
+            p_ids = generate_prompt_ids(row, tool_defs, tokenizer)
+            prompt_token_ids_list.append(p_ids)
             valid_indices.append(i)
         except Exception as e:
             print(f"Error formatting row {i}: {e}")
 
-    # 2. Initialize vLLM
+    # 2. Initialize vLLM with SAFETY FLAGS
     print(f"Initializing model: {args.model_path}")
     llm = LLM(
         model=args.model_path, 
         tensor_parallel_size=args.tp_size,
         max_model_len=args.max_model_len,
-        enforce_eager=True 
+        enforce_eager=True,           # Disables CUDA Graphs (prevents some memory/optimization bugs)
+        num_speculative_tokens=0,     # <--- FORCE SPECULATIVE DECODING OFF
     )
     
     # 3. Generate
@@ -198,11 +201,12 @@ def main():
         temperature=0.0, 
         max_tokens=1024,
         stop=["Observation:", "User Input:"],
-        repetition_penalty=1.05
+        repetition_penalty=1.1,       # <--- Increased from 1.05 to 1.1 to break "case, case" loops
+        min_p=0.05                    # <--- Optional: Ignores very low prob tokens (helps reduce hallucinations)
     )
 
     print("Generating responses...")
-    outputs = llm.generate(prompts, sampling_params)
+    outputs = llm.generate(prompt_token_ids=prompt_token_ids_list, sampling_params=sampling_params)
 
     print(f"Saving to {args.output_file}...")
     with open(args.output_file, 'w') as f:
@@ -213,10 +217,13 @@ def main():
             
             full_response = "Thought: " + generated_text
             
+            # Debug: Decode the prompt to verify formatting
+            decoded_prompt = tokenizer.decode(prompt_token_ids_list[i])
+            
             result_obj = {
                 "id": original_row.get('name', f"sample_{idx}"),
                 "model_response": full_response, 
-                "full_prompt": prompts[i],
+                "full_prompt_decoded": decoded_prompt,
                 "ground_truth_sensitive_info": original_row.get('trajectory', {}).get('sensitive_info_items', [])
             }
             
