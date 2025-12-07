@@ -226,7 +226,7 @@ def main():
 
     sampling_params = SamplingParams(
         temperature=0.0, 
-        max_tokens=1024,
+        max_tokens=2048,
         stop=["Observation:", "User Input:"], # Stop on text triggers
         stop_token_ids=stop_token_ids,        # Stop on model control tokens
         repetition_penalty=1.1 
