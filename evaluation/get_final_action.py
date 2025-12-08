@@ -94,7 +94,7 @@ def format_prompt(row: Dict, tool_defs: Dict) -> str:
         user_input=user_instruction,
         tool_names_list=tool_names_list,
         available_toolkit_description=available_toolkit_description,
-        agent_scratchpad=executable_trajectory,
+        executable_trajectory=executable_trajectory,
         final_action=final_action
     )
     
