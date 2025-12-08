@@ -192,13 +192,13 @@ def main():
     # 3. Generate
     # We use stop_token_ids to ensure we stop exactly when Llama-3 says "I'm done"
     # Llama-3 EOT ID is usually 128009, but we pull it from tokenizer to be safe.
-    stop_token_ids = [tokenizer.eos_token_id, tokenizer.convert_tokens_to_ids("<|eot_id|>")]
+    #top_token_ids = [tokenizer.eos_token_id, tokenizer.convert_tokens_to_ids("<|eot_id|>")]
 
     sampling_params = SamplingParams(
         temperature=0.0, 
         max_tokens=2048,
-        stop=["Observation:", "User Input:"], # Stop on text triggers
-        stop_token_ids=stop_token_ids,        # Stop on model control tokens
+        #stop=["Observation:", "User Input:"], # Stop on text triggers
+        #stop_token_ids=stop_token_ids,        # Stop on model control tokens
         repetition_penalty=1.1 
     )
 
