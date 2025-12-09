@@ -56,7 +56,7 @@ Here are some requirements that you should strictly follow to format the [Action
 
 ## Start the Execution
 User Input: {user_input}\nPast Trajectory:\n{executable_trajectory}\n\nPlease output your **NEXT** [Action]/[Action Input] following the provided [Scratchpad], directly start your response with your [Thought] for the current iteration. The [Action] should be {final_action}.
-Now begin your task! Remember that the tools available to you are: [{tool_names_list}]. Please output your **NEXT** [Action]/[Action Input] or [Final Answer] (when you have finished all your actions) following the provided [Scratchpad], directly start your response with your [Thought] for the current iteration.
+
 """
 
 # =============================================================================
