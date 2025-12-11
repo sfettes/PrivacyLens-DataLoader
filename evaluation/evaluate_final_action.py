@@ -285,7 +285,7 @@ def main():
     llm = LLM(
         model=args.model,
         tensor_parallel_size=args.tp_size,
-        max_model_len=4096,
+        max_model_len=6000,
         enforce_eager=True
     )
     
