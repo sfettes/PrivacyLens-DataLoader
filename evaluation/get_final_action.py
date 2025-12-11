@@ -216,7 +216,7 @@ def main():
         speculative_config=None
     )
     
-    stop_token_ids = [tokenizer.eos_token_id, tokenizer.convert_tokens_to_ids("<|eot_id|>")]
+    stop_token_ids = [tokenizer.eos_token_id]
 
     sanitized_trajectories = []
     ci_analyses = []
