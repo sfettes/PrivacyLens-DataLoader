@@ -221,7 +221,8 @@ def main():
         tensor_parallel_size=args.tp_size,
         max_model_len=args.max_model_len,
         enforce_eager=True,
-        speculative_config=None
+        speculative_config=None,
+        kv_cache_dtype="fp8"
     )
     
     stop_token_ids = [tokenizer.eos_token_id]
