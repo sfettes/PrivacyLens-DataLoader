@@ -203,7 +203,7 @@ def main():
     parser.add_argument("--output_file", type=str, required=True)
     parser.add_argument("--tools_file", type=str, default="tools.json")
     parser.add_argument("--tp_size", type=int, default=1)
-    parser.add_argument("--max_model_len", type=int, default=8192)
+    parser.add_argument("--max_model_len", type=int, default=4096)
     # New Flag: Default is False (Off)
     parser.add_argument("--enable_filter", action="store_true", help="Enable the privacy filtering step (Phase 1).")
     
