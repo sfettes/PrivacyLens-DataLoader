@@ -327,7 +327,6 @@ def main():
             max_model_len=args.max_model_len,
             enforce_eager=True,
             speculative_config=None,
-            kv_cache_dtype=args.quantization, # This affects Cache, separate from model weights
             quantization=args.quantization 
         )
     # -------------------------------------------------------------------------
