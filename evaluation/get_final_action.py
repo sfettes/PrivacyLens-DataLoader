@@ -222,7 +222,8 @@ def main():
         max_model_len=args.max_model_len,
         enforce_eager=True,
         speculative_config=None,
-        kv_cache_dtype="fp8"
+        kv_cache_dtype="fp8",
+        quantization="fp8"
     )
     
     stop_token_ids = [tokenizer.eos_token_id]
