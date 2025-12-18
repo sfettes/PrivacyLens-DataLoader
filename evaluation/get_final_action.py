@@ -237,26 +237,40 @@ class TransformersLLM:
         results = []
         
         for prompt in prompts:
-            inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
+            # --- CRITICAL FIX ---
+            # add_special_tokens=False is required because apply_chat_template 
+            # (used in main) has already added the <|begin_of_text|> token.
+            # Without this, you get double BOS tokens, causing incoherent output.
+            inputs = self.tokenizer(
+                prompt, 
+                return_tensors="pt", 
+                add_special_tokens=False 
+            ).to(self.device)
             
             do_sample = sampling_params.temperature > 0
+            
             gen_kwargs = {
                 "max_new_tokens": sampling_params.max_tokens,
                 "do_sample": do_sample,
-                "pad_token_id": self.tokenizer.eos_token_id,
+                "pad_token_id": self.tokenizer.pad_token_id,
+                "eos_token_id": self.terminators,
             }
             
             if do_sample:
                 gen_kwargs["temperature"] = sampling_params.temperature
                 if hasattr(sampling_params, 'top_p'):
                     gen_kwargs["top_p"] = sampling_params.top_p
+            else:
+                gen_kwargs["temperature"] = None
+                gen_kwargs["top_p"] = None
 
             if sampling_params.stop_token_ids:
-                gen_kwargs["eos_token_id"] = sampling_params.stop_token_ids
+                gen_kwargs["eos_token_id"] = list(set(self.terminators + sampling_params.stop_token_ids))
 
             with torch.no_grad():
                 outputs = self.model.generate(**inputs, **gen_kwargs)
             
+            # Decode
             input_len = inputs.input_ids.shape[1]
             generated_tokens = outputs[0][input_len:]
             text = self.tokenizer.decode(generated_tokens, skip_special_tokens=True)
