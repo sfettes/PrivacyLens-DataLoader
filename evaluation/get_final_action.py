@@ -191,10 +191,84 @@ def load_data(file_path: str) -> List[Dict]:
         with open(file_path, 'r') as f:
             data = json.load(f)
             return [data] if isinstance(data, dict) else data
+# =============================================================================
+# 3. MAIN EXECUTION (UPDATED WITH QUANTIZATION FLAG)
+# =============================================================================
 
-# =============================================================================
-# 3. MAIN EXECUTION
-# =============================================================================
+class TransformersLLM:
+    """
+    A drop-in replacement for vllm.LLM that uses Hugging Face Transformers.
+    """
+    def __init__(self, model_path, tokenizer, quantization=None, **kwargs):
+        import torch
+        from transformers import AutoModelForCausalLM
+        
+        print(f" [TransformersLLM] Loading {model_path} with HF Transformers...")
+        
+        self.device = "cuda"
+        self.tokenizer = tokenizer
+        
+        # Logic: If quantization is requested (e.g. 'fp8'), let HF Auto configuration 
+        # handle the specific dtype (needed for pre-quantized models).
+        # Otherwise, force bfloat16 for stability on H100.
+        if quantization:
+            print(f" [TransformersLLM] Quantization '{quantization}' requested. Using torch_dtype='auto'.")
+            dtype_config = "auto"
+        else:
+            print(" [TransformersLLM] No quantization requested. Forcing bfloat16 for H100 stability.")
+            dtype_config = torch.bfloat16
+
+        self.model = AutoModelForCausalLM.from_pretrained(
+            model_path,
+            device_map="auto",
+            torch_dtype=dtype_config,
+            attn_implementation="flash_attention_2",
+            trust_remote_code=True
+        )
+
+    def generate(self, prompts: List[str], sampling_params: SamplingParams):
+        import torch
+        
+        class MockOutput:
+            def __init__(self, text): self.text = text
+        class MockRequestOutput:
+            def __init__(self, text): self.outputs = [MockOutput(text)]
+            
+        results = []
+        
+        for prompt in prompts:
+            inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
+            
+            do_sample = sampling_params.temperature > 0
+            gen_kwargs = {
+                "max_new_tokens": sampling_params.max_tokens,
+                "do_sample": do_sample,
+                "pad_token_id": self.tokenizer.eos_token_id,
+            }
+            
+            if do_sample:
+                gen_kwargs["temperature"] = sampling_params.temperature
+                if hasattr(sampling_params, 'top_p'):
+                    gen_kwargs["top_p"] = sampling_params.top_p
+
+            if sampling_params.stop_token_ids:
+                gen_kwargs["eos_token_id"] = sampling_params.stop_token_ids
+
+            with torch.no_grad():
+                outputs = self.model.generate(**inputs, **gen_kwargs)
+            
+            input_len = inputs.input_ids.shape[1]
+            generated_tokens = outputs[0][input_len:]
+            text = self.tokenizer.decode(generated_tokens, skip_special_tokens=True)
+            
+            if sampling_params.stop:
+                for stop_str in sampling_params.stop:
+                    if stop_str in text:
+                        text = text.split(stop_str)[0]
+            
+            results.append(MockRequestOutput(text))
+            
+        return results
 
 def main():
     parser = argparse.ArgumentParser()
@@ -204,8 +278,11 @@ def main():
     parser.add_argument("--tools_file", type=str, default="tools.json")
     parser.add_argument("--tp_size", type=int, default=1)
     parser.add_argument("--max_model_len", type=int, default=4096)
-    # New Flag: Default is False (Off)
-    parser.add_argument("--enable_filter", action="store_true", help="Enable the privacy filtering step (Phase 1).")
+    parser.add_argument("--enable_filter", action="store_true", help="Enable the privacy filtering step.")
+    
+    # --- NEW QUANTIZATION FLAG ---
+    # Default is None (no quantization / standard precision)
+    parser.add_argument("--quantization", type=str, default=None, help="Quantization mode (e.g. 'fp8').")
     
     args = parser.parse_args()
 
@@ -215,17 +292,32 @@ def main():
     tool_defs = load_tool_definitions(args.tools_file)
     data = load_data(args.input_file)
     
-    print(f"Initializing model: {args.model_path}")
-    llm = LLM(
-        model=args.model_path, 
-        tensor_parallel_size=args.tp_size,
-        max_model_len=args.max_model_len,
-        enforce_eager=True,
-        speculative_config=None,
-        kv_cache_dtype="fp8",
-        quantization="fp8"
-    )
-    
+    # -------------------------------------------------------------------------
+    # CONDITIONAL LOADING LOGIC
+    # -------------------------------------------------------------------------
+    if "llama" in args.model_path.lower():
+        print(f"Detected Llama model: {args.model_path}")
+        print(">>> Switching to Hugging Face Transformers backend.")
+        llm = TransformersLLM(
+            model_path=args.model_path,
+            tokenizer=tokenizer,
+            quantization=args.quantization # Pass the flag here
+        )
+    else:
+        print(f"Initializing standard vLLM engine: {args.model_path}")
+        # Note: We pass args.quantization directly to vLLM.
+        # If args.quantization is None, vLLM defaults to auto/none depending on version.
+        llm = LLM(
+            model=args.model_path, 
+            tensor_parallel_size=args.tp_size,
+            max_model_len=args.max_model_len,
+            enforce_eager=True,
+            speculative_config=None,
+            kv_cache_dtype="fp8", # This affects Cache, separate from model weights
+            quantization=args.quantization 
+        )
+    # -------------------------------------------------------------------------
+
     stop_token_ids = [tokenizer.eos_token_id]
 
     sanitized_trajectories = []
@@ -268,11 +360,10 @@ def main():
             
     else:
         print("--- Phase 1: Filtering Trajectories (DISABLED) ---")
-        # Direct pass-through of original data
         for i, row in enumerate(data):
             traj = row.get('trajectory', row).get('executable_trajectory', '')
             sanitized_trajectories.append(traj)
-            ci_analyses.append(None) # No analysis performed
+            ci_analyses.append(None)
             valid_indices.append(i)
 
     # =========================================================================
@@ -309,7 +400,6 @@ def main():
     # =========================================================================
     print(f"Saving to {args.output_file}...")
     
-    # Ensure directory exists (prevents the error you saw earlier)
     output_dir = os.path.dirname(args.output_file)
     if output_dir:
         os.makedirs(output_dir, exist_ok=True)
@@ -321,7 +411,6 @@ def main():
             final_generated_text = output.outputs[0].text.strip()
             
             result_obj = {
-                # Fallback to sample_idx if ID/Name is missing
                 "id": original_row.get('name', original_row.get('id', f"sample_{idx}")),
                 "model_response": "Thought: " + final_generated_text,
                 "filter_enabled": args.enable_filter,
