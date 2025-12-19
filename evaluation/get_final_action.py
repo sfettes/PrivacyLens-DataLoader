@@ -253,7 +253,7 @@ class TransformersLLM:
                 "max_new_tokens": sampling_params.max_tokens,
                 "do_sample": do_sample,
                 "pad_token_id": self.tokenizer.pad_token_id,
-                "eos_token_id": self.terminators,
+                "eos_token_id": sampling_params.stop_token_ids,
             }
             
             if do_sample:
@@ -263,9 +263,6 @@ class TransformersLLM:
             else:
                 gen_kwargs["temperature"] = None
                 gen_kwargs["top_p"] = None
-
-            if sampling_params.stop_token_ids:
-                gen_kwargs["eos_token_id"] = list(set(self.terminators + sampling_params.stop_token_ids))
 
             with torch.no_grad():
                 outputs = self.model.generate(**inputs, **gen_kwargs)
