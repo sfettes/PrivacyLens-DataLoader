@@ -237,10 +237,6 @@ class TransformersLLM:
         results = []
         
         for prompt in prompts:
-            # --- CRITICAL FIX ---
-            # add_special_tokens=False is required because apply_chat_template 
-            # (used in main) has already added the <|begin_of_text|> token.
-            # Without this, you get double BOS tokens, causing incoherent output.
             inputs = self.tokenizer(
                 prompt, 
                 return_tensors="pt", 
@@ -290,9 +286,6 @@ def main():
     parser.add_argument("--tp_size", type=int, default=1)
     parser.add_argument("--max_model_len", type=int, default=4096)
     parser.add_argument("--enable_filter", action="store_true", help="Enable the privacy filtering step.")
-    
-    # --- NEW QUANTIZATION FLAG ---
-    # Default is None (no quantization / standard precision)
     parser.add_argument("--quantization", type=str, default=None, help="Quantization mode (e.g. 'fp8').")
     
     args = parser.parse_args()
@@ -312,12 +305,10 @@ def main():
         llm = TransformersLLM(
             model_path=args.model_path,
             tokenizer=tokenizer,
-            quantization=args.quantization # Pass the flag here
+            quantization=args.quantization 
         )
     else:
         print(f"Initializing standard vLLM engine: {args.model_path}")
-        # Note: We pass args.quantization directly to vLLM.
-        # If args.quantization is None, vLLM defaults to auto/none depending on version.
         llm = LLM(
             model=args.model_path, 
             tensor_parallel_size=args.tp_size,
